@@ -1,0 +1,10 @@
+INITIAL_CASH = 200000.0  # 初始资金
+COMMISSION = 0.0005  # 交易手续费
+slippage = 0.01  # 滑点
+grid_size = 0.03  # 网格大小
+take_profit = 0.03  # 盈利目标
+stop_loss = 0.05  # 止损目标
+base_price = 6.5  # 基准价格
+max_positions = 10  # 最大持仓数量
+timeframe = "1d"  # 时间框架
+data_source = "your_data_source"  # 数据源配置

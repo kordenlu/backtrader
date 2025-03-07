@@ -18,84 +18,124 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 ###############################################################################
-from __future__ import (absolute_import, division, print_function,
-                        unicode_literals)
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 import backtrader as bt
 import backtrader.feed as feed
 from ..utils import date2num
 import datetime as dt
+import logging
+import time
+
+# 配置日志
+logger = logging.getLogger(__name__)
 
 TIMEFRAMES = dict(
     (
-        (bt.TimeFrame.Seconds, 's'),
-        (bt.TimeFrame.Minutes, 'm'),
-        (bt.TimeFrame.Days, 'd'),
-        (bt.TimeFrame.Weeks, 'w'),
-        (bt.TimeFrame.Months, 'm'),
-        (bt.TimeFrame.Years, 'y'),
+        (bt.TimeFrame.Seconds, "s"),
+        (bt.TimeFrame.Minutes, "m"),
+        (bt.TimeFrame.Days, "d"),
+        (bt.TimeFrame.Weeks, "w"),
+        (bt.TimeFrame.Months, "m"),
+        (bt.TimeFrame.Years, "y"),
     )
 )
 
 
 class InfluxDB(feed.DataBase):
     frompackages = (
-        ('influxdb', [('InfluxDBClient', 'idbclient')]),
-        ('influxdb.exceptions', 'InfluxDBClientError')
+        ("influxdb_client", [("InfluxDBClient", "idbclient")]),
+        ("influxdb_client.client.exceptions", "InfluxDBError"),
     )
 
     params = (
-        ('host', '127.0.0.1'),
-        ('port', '8086'),
-        ('username', None),
-        ('password', None),
-        ('database', None),
-        ('timeframe', bt.TimeFrame.Days),
-        ('startdate', None),
-        ('high', 'high_p'),
-        ('low', 'low_p'),
-        ('open', 'open_p'),
-        ('close', 'close_p'),
-        ('volume', 'volume'),
-        ('ointerest', 'oi'),
+        ("url", "http://localhost:8086"),  # InfluxDB 2.0 requires a URL
+        (
+            "token",
+            "",
+        ),  # Authentication token
+        ("org", "yml"),  # Organization
+        ("bucket", "hloc"),  # Bucket (database in InfluxDB 1.x terms)
+        ("timeframe", bt.TimeFrame.Days),
+        ("startdate", None),
+        ("enddate", time.now().strftime("%Y-%m-%d")),
+        ("symbol_code", "600519"),  # Symbol code
+        ("market", "SH"),  # Market
+        ("high", "high"),
+        ("low", "low"),
+        ("open", "open"),
+        ("close", "close"),
+        ("volume", "volume"),
+        # ("ointerest", "oi"),
+        ("measurement", "hloc_data"),  # Measurement name (table in InfluxDB)
     )
 
     def start(self):
         super(InfluxDB, self).start()
         try:
-            self.ndb = idbclient(self.p.host, self.p.port, self.p.username,
-                                 self.p.password, self.p.database)
-        except InfluxDBClientError as err:
-            print('Failed to establish connection to InfluxDB: %s' % err)
+            self.client = idbclient(url=self.p.url, token=self.p.token, org=self.p.org)
+            self.query_api = self.client.query_api()  # Obtain the Query API
+        except InfluxDBError as err:
+            print("Failed to establish connection to InfluxDB: %s" % err)
+            return
 
-        tf = '{multiple}{timeframe}'.format(
+        tf = "{multiple}{timeframe}".format(
             multiple=(self.p.compression if self.p.compression else 1),
-            timeframe=TIMEFRAMES.get(self.p.timeframe, 'd'))
+            timeframe=TIMEFRAMES.get(self.p.timeframe, "d"),
+        )
 
         if not self.p.startdate:
-            st = '<= now()'
+            st = "-30d"  # default to 30 days
         else:
-            st = '>= \'%s\'' % self.p.startdate
+            st = self.p.startdate
 
-        # The query could already consider parameters like fromdate and todate
-        # to have the database skip them and not the internal code
-        qstr = ('SELECT mean("{open_f}") AS "open", mean("{high_f}") AS "high", '
-                'mean("{low_f}") AS "low", mean("{close_f}") AS "close", '
-                'mean("{vol_f}") AS "volume", mean("{oi_f}") AS "openinterest" '
-                'FROM "{dataname}" '
-                'WHERE time {begin} '
-                'GROUP BY time({timeframe}) fill(none)').format(
-                    open_f=self.p.open, high_f=self.p.high,
-                    low_f=self.p.low, close_f=self.p.close,
-                    vol_f=self.p.volume, oi_f=self.p.ointerest,
-                    timeframe=tf, begin=st, dataname=self.p.dataname)
+        # Flux query
+        query = """
+            from(bucket: "{bucket}")
+              |> range(start: {startdate},end: {enddate})
+              |> filter(fn: (r) => r._measurement == "{measurement}")
+              |> filter(fn: (r) => r.market == "{market}" and r.symbol_code == "{symbol_code}")
+              |> filter(fn: (r) => r._field == "{open_f}" or r._field == "{high_f}" or r._field == "{low_f}" or r._field == "{close_f}" or r._field == "{vol_f}")
+              |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
+              |> yield(name: "mean")
+        """.format(
+            bucket=self.p.bucket,
+            startdate=st,
+            measurement=self.p.measurement,
+            market=self.p.market,
+            symbol_code=self.p.symbol_code,
+            open_f=self.p.open,
+            high_f=self.p.high,
+            low_f=self.p.low,
+            close_f=self.p.close,
+            vol_f=self.p.volume,
+            # oi_f=self.p.ointerest,
+        )
 
         try:
-            dbars = list(self.ndb.query(qstr).get_points())
-        except InfluxDBClientError as err:
-            print('InfluxDB query failed: %s' % err)
+            # Execute the query
+            result = self.query_api.query(query)
+            self.dbars = []
+            for table in result:
+                for record in table.records:
+                    self.dbars.append(record.values)
 
-        self.biter = iter(dbars)
+            self.biter = iter(self.dbars)
+
+        except InfluxDBError as err:
+            print("InfluxDB query failed: %s" % err)
+            return
+
+    def stop(self):
+        """Clean up resources when feed is no longer needed"""
+        super(InfluxDB, self).stop()
+        if self.client:
+            # 确保关闭连接
+            try:
+                self.client.close()
+                logger.info("InfluxDB client connection closed")
+            except Exception as e:
+                logger.error(f"Error closing InfluxDB client: {e}")
 
     def _load(self):
         try:
@@ -103,13 +143,29 @@ class InfluxDB(feed.DataBase):
         except StopIteration:
             return False
 
-        self.l.datetime[0] = date2num(dt.datetime.strptime(bar['time'],
-                                                           '%Y-%m-%dT%H:%M:%SZ'))
+        try:
+            if isinstance(bar["_time"], str):
+                for fmt in ["%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"]:
+                    try:
+                        dt_object = dt.datetime.strptime(bar["_time"], fmt)
+                        break
+                    except ValueError:
+                        continue
+                else:
+                    return False
+            else:
+                dt_object = bar["_time"]
+            # Check if bar["_time"] is already a datetime object
 
-        self.l.open[0] = bar['open']
-        self.l.high[0] = bar['high']
-        self.l.low[0] = bar['low']
-        self.l.close[0] = bar['close']
-        self.l.volume[0] = bar['volume']
+            self.l.datetime[0] = date2num(dt_object)
 
-        return True
+            self.l.open[0] = bar[self.p.open]
+            self.l.high[0] = bar[self.p.high]
+            self.l.low[0] = bar[self.p.low]
+            self.l.close[0] = bar[self.p.close]
+            self.l.volume[0] = bar[self.p.volume]
+
+            return True
+        except (KeyError, ValueError) as e:
+            logger.error(f"Error loading data: {e}")
+            return False
