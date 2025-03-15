@@ -58,7 +58,7 @@ class InfluxDB(feed.DataBase):
         ("bucket", "hloc"),  # Bucket (database in InfluxDB 1.x terms)
         ("timeframe", bt.TimeFrame.Days),
         ("startdate", None),
-        ("enddate", time.now().strftime("%Y-%m-%d")),
+        ("enddate", dt.datetime.now().strftime("%Y-%m-%d")),
         ("symbol_code", "600519"),  # Symbol code
         ("market", "SH"),  # Market
         ("high", "high"),
