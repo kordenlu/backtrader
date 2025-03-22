@@ -52,7 +52,7 @@ class InfluxDB(feed.DataBase):
         ("url", "http://localhost:8086"),  # InfluxDB 2.0 requires a URL
         (
             "token",
-            "",
+            "MXfDihY-IzKK_VMybAyzneHw8Yarj3dPG7axceYs2G1Tcfvm-7PeNVK7kgpx9OD5u6vzmiNwfp9tmIhw1bQmnA==",
         ),  # Authentication token
         ("org", "yml"),  # Organization
         ("bucket", "hloc"),  # Bucket (database in InfluxDB 1.x terms)
@@ -92,7 +92,7 @@ class InfluxDB(feed.DataBase):
         # Flux query
         query = """
             from(bucket: "{bucket}")
-              |> range(start: {startdate},end: {enddate})
+              |> range(start: {startdate},stop: {enddate})
               |> filter(fn: (r) => r._measurement == "{measurement}")
               |> filter(fn: (r) => r.market == "{market}" and r.symbol_code == "{symbol_code}")
               |> filter(fn: (r) => r._field == "{open_f}" or r._field == "{high_f}" or r._field == "{low_f}" or r._field == "{close_f}" or r._field == "{vol_f}")
@@ -101,6 +101,7 @@ class InfluxDB(feed.DataBase):
         """.format(
             bucket=self.p.bucket,
             startdate=st,
+            enddate=self.p.enddate,
             measurement=self.p.measurement,
             market=self.p.market,
             symbol_code=self.p.symbol_code,

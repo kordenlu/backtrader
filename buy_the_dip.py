@@ -110,6 +110,7 @@ if __name__ == "__main__":
         market="SH",  # 替换为你的市场代码
         startdate="2020-05-01",
         timeframe=bt.TimeFrame.Days,
+        token="MXfDihY-IzKK_VMybAyzneHw8Yarj3dPG7axceYs2G1Tcfvm-7PeNVK7kgpx9OD5u6vzmiNwfp9tmIhw1bQmnA==",
     )
     cerebro.adddata(data)
 
