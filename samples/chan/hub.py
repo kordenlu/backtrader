@@ -1,3 +1,4 @@
+import matplotlib.dates as mdates
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -57,6 +58,7 @@ class ChartAnalyzer:
         self._identify_fractals()
         self._construct_strokes()
         self._identify_hubs()
+        self._identify_macd_divergence()
 
     def _handle_inclusive_k_lines(self):
         """处理K线包含关系"""
@@ -363,6 +365,80 @@ class ChartAnalyzer:
 
         return self.hubs[-1]
 
+    def _identify_macd_divergence(self):
+        """识别MACD与价格走势的背离"""
+        print("开始识别MACD背离...")
+
+        # 计算MACD
+        exp12 = self.data["Close"].ewm(span=12, adjust=False).mean()
+        exp26 = self.data["Close"].ewm(span=26, adjust=False).mean()
+        macd = exp12 - exp26
+        signal = macd.ewm(span=9, adjust=False).mean()
+        histogram = macd - signal
+
+        # 存储背离信息
+        self.divergences = []
+
+        # 筛选顶分型和底分型
+        top_fractals = [f for f in self.fractals if f["type"] == FractalType.TOP]
+        bottom_fractals = [f for f in self.fractals if f["type"] == FractalType.BOTTOM]
+
+        # 识别顶背离
+        for i in range(1, len(top_fractals)):
+            curr = top_fractals[i]
+            prev = top_fractals[i - 1]
+
+            # 价格创新高但MACD没有创新高
+            if (
+                curr["price"] > prev["price"]
+                and macd[self.data.index[curr["index"]]]
+                <= macd[self.data.index[prev["index"]]]
+            ):
+
+                # 记录顶背离
+                divergence = {
+                    "type": "顶背离",
+                    "first_idx": prev["index"],
+                    "second_idx": curr["index"],
+                    "first_time": prev["time"],
+                    "second_time": curr["time"],
+                    "first_price": prev["price"],
+                    "second_price": curr["price"],
+                    "first_macd": macd[self.data.index[prev["index"]]],
+                    "second_macd": macd[self.data.index[curr["index"]]],
+                }
+
+                self.divergences.append(divergence)
+
+        # 识别底背离
+        for i in range(1, len(bottom_fractals)):
+            curr = bottom_fractals[i]
+            prev = bottom_fractals[i - 1]
+
+            # 价格创新低但MACD没有创新低
+            if (
+                curr["price"] < prev["price"]
+                and macd[self.data.index[curr["index"]]]
+                >= macd[self.data.index[prev["index"]]]
+            ):
+
+                # 记录底背离
+                divergence = {
+                    "type": "底背离",
+                    "first_idx": prev["index"],
+                    "second_idx": curr["index"],
+                    "first_time": prev["time"],
+                    "second_time": curr["time"],
+                    "first_price": prev["price"],
+                    "second_price": curr["price"],
+                    "first_macd": macd[self.data.index[prev["index"]]],
+                    "second_macd": macd[self.data.index[curr["index"]]],
+                }
+
+                self.divergences.append(divergence)
+
+        print(f"识别到{len(self.divergences)}个MACD背离")
+
     def plot_analysis(self):
 
         plt.rcParams["font.sans-serif"] = [
@@ -377,12 +453,12 @@ class ChartAnalyzer:
         plt.rcParams["font.family"] = "sans-serif"  # 使用sans-serif字体
 
         """绘制分析结果"""
-        plt.figure(figsize=(16, 9))
+        fig = plt.figure(figsize=(16, 9))
 
         # 绘制K线图
-        plt.subplot(2, 1, 1)
-        plt.plot(self.data.index, self.data["Close"], "k-", linewidth=1)
-        plt.title("股票价格走势与缠论分析")
+        ax1 = plt.subplot(2, 1, 1)
+        ax1.plot(self.data.index, self.data["Close"], "k-", linewidth=1)
+        ax1.set_title("股票价格走势与缠论分析")
 
         # 绘制分型
         top_fractals = [f for f in self.fractals if f["type"] == FractalType.TOP]
@@ -443,7 +519,7 @@ class ChartAnalyzer:
         plt.legend()
 
         # 绘制MACD辅助判断
-        plt.subplot(2, 1, 2)
+        ax2 = plt.subplot(2, 1, 2)
 
         # 计算MACD
         exp12 = self.data["Close"].ewm(span=12, adjust=False).mean()
@@ -463,6 +539,143 @@ class ChartAnalyzer:
 
         plt.title("MACD")
         plt.legend()
+
+        # 在plot_analysis方法中添加以下代码
+        # 绘制MACD背离
+        if hasattr(self, "divergences") and self.divergences:
+            # 绘制顶背离
+            top_divs = [d for d in self.divergences if d["type"] == "顶背离"]
+            for div in top_divs:
+                # 价格面板中连线
+                plt.subplot(2, 1, 1)
+                plt.plot(
+                    [div["first_time"], div["second_time"]],
+                    [div["first_price"], div["second_price"]],
+                    "r--",
+                    linewidth=1.5,
+                )
+                plt.annotate(
+                    "顶背离",
+                    xy=(div["second_time"], div["second_price"]),
+                    xytext=(10, 10),
+                    textcoords="offset points",
+                    color="red",
+                    fontsize=8,
+                )
+
+                # MACD面板中连线
+                plt.subplot(2, 1, 2)
+                plt.plot(
+                    [div["first_time"], div["second_time"]],
+                    [div["first_macd"], div["second_macd"]],
+                    "r--",
+                    linewidth=1.5,
+                )
+
+            # 绘制底背离
+            bottom_divs = [d for d in self.divergences if d["type"] == "底背离"]
+            for div in bottom_divs:
+                # 价格面板中连线
+                plt.subplot(2, 1, 1)
+                plt.plot(
+                    [div["first_time"], div["second_time"]],
+                    [div["first_price"], div["second_price"]],
+                    "g--",
+                    linewidth=1.5,
+                )
+                plt.annotate(
+                    "底背离",
+                    xy=(div["second_time"], div["second_price"]),
+                    xytext=(10, -15),
+                    textcoords="offset points",
+                    color="green",
+                    fontsize=8,
+                )
+
+                # MACD面板中连线
+                plt.subplot(2, 1, 2)
+                plt.plot(
+                    [div["first_time"], div["second_time"]],
+                    [div["first_macd"], div["second_macd"]],
+                    "g--",
+                    linewidth=1.5,
+                )
+
+        # 添加鼠标悬停显示信息的功能
+        annotation = ax1.annotate(
+            "",
+            xy=(0, 0),
+            xytext=(20, 20),
+            textcoords="offset points",
+            bbox={"boxstyle": "round", "fc": "w", "alpha": 0.8},
+            arrowprops={"arrowstyle": "->"},
+            zorder=10,
+        )
+        annotation.set_visible(False)
+
+        # 鼠标移动事件处理函数
+        def hover(event):
+            if event.inaxes == ax1:
+                # 获取鼠标所在位置的x坐标(时间)
+                x = event.xdata
+                y = event.ydata
+                if x is None:
+                    return
+
+                # 找到最近的数据点
+                index = np.argmin(
+                    np.abs([mdates.date2num(date) - x for date in self.data.index])
+                )
+                date = self.data.index[index]
+                price = self.data["Close"].iloc[index]
+
+                # 更新注释的位置和内容
+                annotation.xy = (date, price)
+
+                # 使用明确的日期格式化，确保显示年-月-日
+                date_str = date.strftime("%Y-%m-%d")
+                annotation.set_text(f"日期: {date_str}\n价格: {price:.2f}")
+
+                # 动态调整注释框的位置，防止在图表边缘溢出
+
+                # 获取图形的像素尺寸
+                fig_width_px = fig.get_figwidth() * fig.dpi
+                fig_height_px = fig.get_figheight() * fig.dpi
+
+                # 获取当前数据点在显示坐标系中的位置（像素坐标）
+                display_pos = ax1.transData.transform((mdates.date2num(date), price))
+
+                # 获取坐标轴在图形中的位置和大小
+                bbox = ax1.get_position()
+                ax_width_px = bbox.width * fig_width_px
+
+                # 简化水平位置判断：在右半部分则显示在左边，在左半部分则显示在右边
+                mid_point = bbox.x0 * fig_width_px + (ax_width_px / 2)
+                if display_pos[0] > mid_point:
+                    x_offset = -80  # 右半边时，显示在左侧
+                    annotation.set_ha("right")  # 水平对齐方式改为右对齐
+                else:
+                    x_offset = 20  # 左半边时，显示在右侧
+                    annotation.set_ha("left")  # 水平对齐方式改为左对齐
+
+                # 垂直方向调整
+                if display_pos[1] < 50:
+                    y_offset = 20  # 如果靠近顶部，则显示在下方
+                else:
+                    y_offset = -20  # 否则显示在上方
+
+                # 应用计算的偏移量
+                annotation.xytext = (x_offset, y_offset)
+
+                # 确保注释框完全可见
+                annotation.set_visible(True)
+                fig.canvas.draw_idle()
+            else:
+                annotation.set_visible(False)
+                fig.canvas.draw_idle()
+
+        # 连接鼠标移动事件
+        fig.canvas.mpl_connect("motion_notify_event", hover)
 
         plt.tight_layout()
         plt.show()
@@ -534,6 +747,7 @@ def get_stock_data(
     influx_token="Pf4Rb2r0X7H5KscNkKMI3z9T4y7gZqGHoRGdE9hK9jqiihf2fKm2lTUa_qiQqWNMHBX-dXPYMIORMPMXf2j2Eg==",
     influx_org="yml",
     influx_bucket="hloc",
+    influx_measurement="hloc_data",
 ):
     """从本地InfluxDB获取股票历史数据"""
     print(f"从InfluxDB获取 {symbol} 的历史数据...")
@@ -573,7 +787,7 @@ def get_stock_data(
         flux_query = f"""
         from(bucket: "{influx_bucket}")
             |> range(start: {start_time_str}, stop: {end_time_str})
-            |> filter(fn: (r) => r["_measurement"] == "hloc_data")
+            |> filter(fn: (r) => r["_measurement"] == "{influx_measurement}")
             |> filter(fn: (r) => r.symbol_code == "{symbol}")
         """
 
@@ -689,7 +903,13 @@ def main():
     args = parser.parse_args()
 
     # 获取数据
-    data = get_stock_data(args.symbol, args.period, args.interval)
+    data = get_stock_data(
+        symbol=args.symbol,
+        period=args.period,
+        interval=args.interval,
+        # influx_bucket="bssaa",
+        # influx_measurement="stock_index",
+    )
     if data is None:
         return
 
