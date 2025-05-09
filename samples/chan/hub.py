@@ -439,7 +439,7 @@ class ChartAnalyzer:
 
         print(f"识别到{len(self.divergences)}个MACD背离")
 
-    def plot_analysis(self):
+    def plot_analysis(self, symbol_code=None, symbol_name=None):
 
         plt.rcParams["font.sans-serif"] = [
             "Arial Unicode MS",
@@ -458,7 +458,15 @@ class ChartAnalyzer:
         # 绘制K线图
         ax1 = plt.subplot(2, 1, 1)
         ax1.plot(self.data.index, self.data["Close"], "k-", linewidth=1)
-        ax1.set_title("股票价格走势与缠论分析")
+
+        # 设置标题，如果有股票代码和名称则显示，否则使用默认标题
+        title = "股票价格走势与缠论分析"
+        if symbol_code and symbol_name:
+            title = f"{symbol_name}（{symbol_code}）- 缠论分析"
+        elif symbol_code:
+            title = f"（{symbol_code}）- 缠论分析"
+
+        ax1.set_title(title)
 
         # 绘制分型
         top_fractals = [f for f in self.fractals if f["type"] == FractalType.TOP]
@@ -920,7 +928,7 @@ def main():
     analyzer.print_current_status()
 
     # 绘制分析结果
-    analyzer.plot_analysis()
+    analyzer.plot_analysis(symbol_code=args.symbol)
 
 
 if __name__ == "__main__":
