@@ -7,6 +7,8 @@ from influxdb_client.client.query_api import QueryApi
 from datetime import datetime, timedelta
 from enum import Enum
 import argparse
+import traceback
+import tushare as ts
 
 
 class Direction(Enum):
@@ -900,24 +902,229 @@ def get_stock_data(
         return None
 
 
+def identify_market_type(symbol):
+    """识别股票代码的市场类型
+
+    参数:
+    symbol: str - 股票代码，可能带有后缀(.SH, .SZ, .HK, .US等)
+
+    返回:
+    tuple - (市场类型, 处理后的代码)
+    """
+    # 初始化为默认A股市场
+    market_type = "A"
+    ts_code = symbol
+
+    # 根据代码特征判断市场类型
+    if symbol.endswith(".HK"):
+        market_type = "HK"
+        ts_code = symbol  # 港股代码保持原样
+    elif symbol.endswith(".US"):
+        market_type = "US"
+        ts_code = symbol[:-3]  # 去掉.US后缀
+    elif symbol.startswith("6"):
+        market_type = "A"
+        ts_code = f"{symbol}.SH"  # 上海证券交易所
+    else:
+        market_type = "A"
+        ts_code = f"{symbol}.SZ"  # 深圳证券交易所
+
+    return market_type, ts_code
+
+
+def get_tushare_data(pro, market_type, ts_code, interval, start_date, end_date):
+    """根据市场类型和K线间隔获取数据
+
+    参数:
+    pro - TuShare API实例
+    market_type: str - 市场类型 ("US", "HK", "A")
+    ts_code: str - 股票代码
+    interval: str - K线间隔
+    start_date: str - 开始日期
+    end_date: str - 结束日期
+
+    返回:
+    pandas.DataFrame - 获取的数据
+    """
+    if interval == "1d":
+        # 日线数据
+        if market_type == "US":
+            return pro.us_daily(
+                ts_code=ts_code, start_date=start_date, end_date=end_date
+            )
+        elif market_type == "HK":
+            return pro.hk_daily(
+                ts_code=ts_code, start_date=start_date, end_date=end_date
+            )
+        else:  # A股
+            return pro.daily(ts_code=ts_code, start_date=start_date, end_date=end_date)
+    elif interval == "1w":
+        # 周线数据
+        if market_type == "US":
+            print("美股暂不支持周线数据，将使用日线数据代替")
+            return pro.us_daily(
+                ts_code=ts_code, start_date=start_date, end_date=end_date
+            )
+        elif market_type == "HK":
+            print("港股暂不支持周线数据，将使用日线数据代替")
+            return pro.hk_daily(
+                ts_code=ts_code, start_date=start_date, end_date=end_date
+            )
+        else:  # A股
+            return pro.weekly(ts_code=ts_code, start_date=start_date, end_date=end_date)
+    elif interval == "1mo":
+        # 月线数据
+        if market_type == "US":
+            print("美股暂不支持月线数据，将使用日线数据代替")
+            return pro.us_daily(
+                ts_code=ts_code, start_date=start_date, end_date=end_date
+            )
+        elif market_type == "HK":
+            print("港股暂不支持月线数据，将使用日线数据代替")
+            return pro.hk_daily(
+                ts_code=ts_code, start_date=start_date, end_date=end_date
+            )
+        else:  # A股
+            return pro.monthly(
+                ts_code=ts_code, start_date=start_date, end_date=end_date
+            )
+    else:
+        # 默认使用日线数据
+        print(f"不支持的K线间隔: {interval}，使用默认日线数据")
+        return get_tushare_data(pro, market_type, ts_code, "1d", start_date, end_date)
+
+
+def get_stock_data_from_tushare(
+    symbol,
+    period="-1y",
+    interval="1d",
+    tushare_token="d00a9271e726db72d5dcbc6edeabc9abeba3b4102aa1bb26cdadb20c",
+):
+    """从TuShare获取股票历史数据
+
+    参数:
+    symbol: str - 股票代码 (例如: "600519", "000001", "AAPL.US", "00700.HK")
+    period: str - 时间周期 (例如: "-1y"表示过去一年, 支持y, mo, w, d单位)
+    interval: str - K线间隔 ("1d"=日线, "1w"=周线, "1mo"=月线)
+    tushare_token: str - TuShare API token
+
+    返回:
+    pandas.DataFrame - 包含股票数据的DataFrame，索引为日期，列包含OHLCV
+    """
+    print(f"从TuShare获取 {symbol} 的历史数据...")
+
+    # 初始化TuShare API
+    try:
+        pro = ts.pro_api(tushare_token)
+    except Exception as e:
+        print(f"初始化TuShare API出错: {e}")
+        return None
+
+    # 计算时间范围
+    end_time = datetime.now()
+
+    if period.startswith("-"):  # 处理负数周期（如"-1y"表示过去一年）
+        period = period[1:]
+
+    if period.endswith("y"):
+        years = int(period[:-1])
+        start_time = end_time - timedelta(days=years * 365)
+    elif period.endswith("mo"):
+        months = int(period[:-2])
+        start_time = end_time - timedelta(days=months * 30)
+    elif period.endswith("w"):
+        weeks = int(period[:-1])
+        start_time = end_time - timedelta(weeks=weeks)
+    elif period.endswith("d"):
+        days = int(period[:-1])
+        start_time = end_time - timedelta(days=days)
+    else:
+        print(f"不支持的周期格式: {period}")
+        return None
+
+    # 格式化日期为TuShare支持的格式
+    start_date = start_time.strftime("%Y%m%d")
+    end_date = end_time.strftime("%Y%m%d")
+
+    try:
+        # 识别市场类型和标准化代码
+        market_type, ts_code = identify_market_type(symbol)
+
+        # 获取数据
+        df = get_tushare_data(pro, market_type, ts_code, interval, start_date, end_date)
+
+        if df is None or df.empty:
+            print(f"未能获取到 {symbol} 的数据")
+            return None
+
+        # 处理返回的数据，TuShare API返回的数据需要转换
+        # 将trade_date列转换为datetime并设为索引
+        df["trade_date"] = pd.to_datetime(df["trade_date"])
+        # 按日期升序排序
+        df = df.sort_values("trade_date")
+        # 设置日期为索引
+        df = df.set_index("trade_date")
+
+        # 重命名列以匹配ChartAnalyzer需要的格式
+        df = df.rename(
+            columns={
+                "open": "Open",
+                "high": "High",
+                "low": "Low",
+                "close": "Close",
+                "vol": "Volume",
+                "change": "change",
+                "pct_chg": "pct_change",
+            }
+        )
+
+        print(f"成功获取 {len(df)} 条历史数据 (间隔: {interval})")
+        return df
+
+    except Exception as e:
+        print(f"从TuShare获取数据时出错: {e}")
+        traceback.print_exc()
+        return None
+
+
 def main():
     # 解析命令行参数
     parser = argparse.ArgumentParser(description="基于缠论理论分析股票中枢")
-    parser.add_argument(
-        "symbol", type=str, help="股票代码 (例如: AAPL, 600519, 000001)"
-    )
+    parser.add_argument("symbol", type=str, help="股票代码 (例如: 600519, 000001)")
     parser.add_argument("--period", type=str, default="1y", help="数据周期 (默认: 1y)")
     parser.add_argument("--interval", type=str, default="1d", help="K线间隔 (默认: 1d)")
+    parser.add_argument(
+        "--source",
+        type=str,
+        default="tushare",
+        help="数据源 (默认: tushare, 可选: influx)",
+    )
+    parser.add_argument("--token", type=str, help="TuShare API Token")
     args = parser.parse_args()
 
     # 获取数据
-    data = get_stock_data(
-        symbol=args.symbol,
-        period=args.period,
-        interval=args.interval,
-        # influx_bucket="bssaa",
-        # influx_measurement="stock_index",
-    )
+    if args.source.lower() == "influx":
+        # 从InfluxDB获取数据
+        data = get_stock_data(
+            symbol=args.symbol,
+            period=args.period,
+            interval=args.interval,
+            # influx_bucket="bssaa",
+            # influx_measurement="stock_index",
+        )
+    else:
+        # 从TuShare获取数据
+        data = get_stock_data_from_tushare(
+            symbol=args.symbol,
+            period=args.period,
+            interval=args.interval,
+            tushare_token=(
+                args.token
+                if args.token
+                else "d00a9271e726db72d5dcbc6edeabc9abeba3b4102aa1bb26cdadb20c"
+            ),
+        )
+
     if data is None:
         return
 
@@ -925,10 +1132,50 @@ def main():
     analyzer = ChartAnalyzer(data)
 
     # 打印当前状态
-    analyzer.print_current_status()
+    analyzer.print_current_status()  # 尝试获取股票名称 (仅当使用 TuShare 时)
+    symbol_name = None
+    # if args.source.lower() != "influx":
+    #     try:
+    #         # 初始化TuShare API
+    #         token = (
+    #             args.token
+    #             if args.token
+    #             else "d00a9271e726db72d5dcbc6edeabc9abeba3b4102aa1bb26cdadb20c"
+    #         )
+    #         pro = ts.pro_api(token)
+
+    #         # 使用辅助函数识别市场类型和处理代码
+    #         market_type, ts_code = identify_market_type(args.symbol)
+
+    #     # 根据市场类型获取股票名称
+    #     if market_type == "HK":
+    #         # 港股
+    #         try:
+    #             stock_info = pro.hk_basic(ts_code=ts_code, fields="ts_code,name")
+    #         except:
+    #             print("获取港股名称失败，可能接口不存在")
+    #             stock_info = pd.DataFrame()
+    #     elif market_type == "US":
+    #         # 美股
+    #         try:
+    #             stock_info = pro.us_basic(ts_code=ts_code, fields="ts_code,name")
+    #         except:
+    #             print("获取美股名称失败，可能接口不存在")
+    #             stock_info = pd.DataFrame()
+    #     elif market_type == "A":
+    #         # A股
+    #         stock_info = pro.stock_basic(ts_code=ts_code, fields="ts_code,name")
+    #     else:
+    #         print(f"无法识别的市场类型: {market_type}")
+    #         stock_info = pd.DataFrame()
+    #     if not stock_info.empty:
+    #         symbol_name = stock_info["name"].iloc[0]
+    #         print(f"股票名称: {symbol_name}")
+    # except Exception as e:
+    #     print(f"获取股票名称失败: {e}")
 
     # 绘制分析结果
-    analyzer.plot_analysis(symbol_code=args.symbol)
+    analyzer.plot_analysis(symbol_code=args.symbol, symbol_name=symbol_name)
 
 
 if __name__ == "__main__":
