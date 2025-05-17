@@ -69,3 +69,6 @@ samples2/
 datas/*.py
 
 .idea/
+.vscode/*
+.DS_Store
+*.egg-info/

@@ -1,0 +1,38 @@
+# 策略全局默认参数
+default_strategy:
+  dip: 2
+  hold: 30
+  profit_target: 0.06
+  price_threshold: 15.0
+
+# 实时交易配置
+realtime:
+  initial_cash: 100000.0
+  commission: 0.0003
+  update_interval: 3  # 刷新间隔(秒)
+  trading_hours:
+    start: "9:30"
+    end: "15:00"
+  max_daily_trades: 5  # 每日最大交易次数
+
+# 数据源设置
+datasource:
+  type: "TuShare"
+  token: "d00a9271e726db72d5dcbc6edeabc9abeba3b4102aa1bb26cdadb20c"  # 替换为你的令牌
+
+# 不同股票的配置列表
+stocks:
+  - name: "贵州茅台"
+    symbol_code: "600519"
+    market: "SH"
+    strategy:
+      dip: 3
+      price_threshold: 1500
+      
+  # - name: "中国平安"
+  #   symbol_code: "601318"
+  #   market: "A"
+  #   strategy:
+  #     dip: 2.5
+  #     hold: 20
+  #     price_threshold: 65

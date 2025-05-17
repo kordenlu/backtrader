@@ -18,8 +18,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 ###############################################################################
-from __future__ import (absolute_import, division, print_function,
-                        unicode_literals)
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 from backtrader import Indicator
 from backtrader.functions import *
@@ -88,3 +87,4 @@ from .ichimoku import *
 from .hurst import *
 from .ols import *
 from .hadelta import *
+from .chan_theory import *

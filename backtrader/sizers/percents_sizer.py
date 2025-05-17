@@ -18,24 +18,23 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 ###############################################################################
-from __future__ import (absolute_import, division, print_function,
-                        unicode_literals)
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 import backtrader as bt
 
-__all__ = ['PercentSizer', 'AllInSizer', 'PercentSizerInt', 'AllInSizerInt']
+__all__ = ["PercentSizer", "AllInSizer", "PercentSizerInt", "AllInSizerInt"]
 
 
 class PercentSizer(bt.Sizer):
-    '''This sizer return percents of available cash
+    """This sizer return percents of available cash
 
     Params:
       - ``percents`` (default: ``20``)
-    '''
+    """
 
     params = (
-        ('percents', 20),
-        ('retint', False),  # return an int size or rather the float value
+        ("percents", 20),
+        ("retint", False),  # return an int size or rather the float value
     )
 
     def __init__(self):
@@ -55,36 +54,45 @@ class PercentSizer(bt.Sizer):
 
 
 class AllInSizer(PercentSizer):
-    '''This sizer return all available cash of broker
+    """This sizer return all available cash of broker
 
-     Params:
-       - ``percents`` (default: ``100``)
-     '''
-    params = (
-        ('percents', 100),
-    )
+    Params:
+      - ``percents`` (default: ``100``)
+    """
+
+    params = (("percents", 100),)
 
 
 class PercentSizerInt(PercentSizer):
-    '''This sizer return percents of available cash in form of size truncated
+    """This sizer return percents of available cash in form of size truncated
     to an int
 
     Params:
       - ``percents`` (default: ``20``)
-    '''
+    """
 
-    params = (
-        ('retint', True),  # return an int size or rather the float value
-    )
+    params = (("retint", True),)  # return an int size or rather the float value
 
 
 class AllInSizerInt(PercentSizerInt):
-    '''This sizer return all available cash of broker with the
+    """This sizer return all available cash of broker with the
     size truncated to an int
 
      Params:
        - ``percents`` (default: ``100``)
-     '''
-    params = (
-        ('percents', 100),
-    )
+    """
+
+    params = (("percents", 100),)
+
+
+class ChinaStockSizer(bt.Sizer):
+    def _getsizing(self, comminfo, cash, data, isbuy):
+        if isbuy:  # 买入
+            price = data.close[0]
+            # 计算可以买多少股，并向下取整到100的倍数
+            size = int(cash / price / 100) * 100
+            return size
+        else:  # 卖出
+            # 返回持有的全部数量
+            position = self.broker.getposition(data)
+            return position.size

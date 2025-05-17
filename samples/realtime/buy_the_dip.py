@@ -9,6 +9,7 @@ class BuyTheDip(bt.Strategy):
         ("profit_target", 0.06),  # 盈利目标，5%
         ("price_threshold", 1550),  # 价格阈值
         ("stock_name", ""),  # 股票名称（用于日志）
+        ("is_ashare", True),  # 默认为A股
     )
 
     def __init__(self):
@@ -17,14 +18,52 @@ class BuyTheDip(bt.Strategy):
         self.buyprice = None
         self.buycomm = None
         self.bar_executed = None
+        self.buy_dates = {}  # 跟踪买入日期
+
+        # 添加实时交易所需变量
+        self.last_check_time = None
+        self.daily_trade_limit_reached = False
+        self.trade_count = 0
+        self.max_daily_trades = 5  # 每日最大交易次数
+
+        # 显示当前股票的参数设置
+        self.log(f"策略初始化: {self.p.stock_name}")
+        self.log(
+            f"参数: dip={self.p.dip}, hold={self.p.hold}, "
+            f"profit_target={self.p.profit_target}, price_threshold={self.p.price_threshold}"
+        )
 
     def log(self, txt, dt=None):
-        dt = dt or self.datas[0].datetime.date(0)
-        print("%s, %s" % (dt.isoformat(), txt))
+        """安全地记录日志，处理数据源为空的情况"""
+        try:
+            if self.datas and len(self.datas[0]) > 0:
+                dt = dt or self.datas[0].datetime.date(0)
+                print(f"{dt.isoformat()} {txt}")
+            else:
+                # 数据源为空时的处理
+                print(f"[初始化] {txt}")
+        except IndexError:
+            # 处理索引错误
+            print(f"[初始化] {txt}")
 
     def next(self):
         # 检查是否有未完成的订单
         if self.order:
+            return
+
+        # 实时交易安全检查
+        current_time = datetime.now()
+        current_date = current_time.date()
+
+        # 每日交易限制重置
+        if self.last_check_time and self.last_check_time.date() != current_date:
+            self.daily_trade_limit_reached = False
+            self.trade_count = 0
+
+        self.last_check_time = current_time
+
+        # 检查每日交易限制
+        if self.daily_trade_limit_reached:
             return
 
         # 检查是否已经持仓
@@ -45,6 +84,7 @@ class BuyTheDip(bt.Strategy):
                 self.order = self.close()
 
         else:
+            self.log("Close: %.2f" % self.dataclose[0])
             # 计算下跌幅度
             today_close = self.dataclose[0]
             yesterday_close = self.dataclose[-1]
@@ -57,12 +97,19 @@ class BuyTheDip(bt.Strategy):
             if (
                 dip_percentage >= self.p.dip
                 and self.dataclose[0] < self.p.price_threshold
+                and self.trade_count < self.max_daily_trades
             ):
                 # 全仓买入 (目标仓位为账户价值的100%)
                 self.log(f"BUY CREATE (FULL POSITION), Price: {self.dataclose[0]:.2f}")
                 self.order = self.buy()  # 1.0 表示 100%
                 self.buyprice = self.dataclose[0]
                 self.bar_executed = len(self)
+
+                # 更新交易计数
+                self.trade_count += 1
+                if self.trade_count >= self.max_daily_trades:
+                    self.daily_trade_limit_reached = True
+                    self.log("每日交易次数限制已达到")
 
     def notify_order(self, order):
         if order.status in [order.Submitted, order.Accepted]:
