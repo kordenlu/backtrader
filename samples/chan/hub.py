@@ -581,6 +581,23 @@ class ChartAnalyzer:
                     "r--",
                     linewidth=1.5,
                 )
+                # 在MACD面板中添加MACD值标注
+                plt.annotate(
+                    f"MACD: {div['first_macd']:.4f}",
+                    xy=(div["first_time"], div["first_macd"]),
+                    xytext=(-55, 10),
+                    textcoords="offset points",
+                    color="red",
+                    fontsize=8,
+                )
+                plt.annotate(
+                    f"MACD: {div['second_macd']:.4f}",
+                    xy=(div["second_time"], div["second_macd"]),
+                    xytext=(10, 10),
+                    textcoords="offset points",
+                    color="red",
+                    fontsize=8,
+                )
 
             # 绘制底背离
             bottom_divs = [d for d in self.divergences if d["type"] == "底背离"]
@@ -609,6 +626,23 @@ class ChartAnalyzer:
                     [div["first_macd"], div["second_macd"]],
                     "g--",
                     linewidth=1.5,
+                )
+                # 在MACD面板中添加MACD值标注
+                plt.annotate(
+                    f"MACD: {div['first_macd']:.4f}",
+                    xy=(div["first_time"], div["first_macd"]),
+                    xytext=(-55, -15),
+                    textcoords="offset points",
+                    color="green",
+                    fontsize=8,
+                )
+                plt.annotate(
+                    f"MACD: {div['second_macd']:.4f}",
+                    xy=(div["second_time"], div["second_macd"]),
+                    xytext=(10, -15),
+                    textcoords="offset points",
+                    color="green",
+                    fontsize=8,
                 )
 
         # 添加鼠标悬停显示信息的功能

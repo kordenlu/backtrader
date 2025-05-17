@@ -72,3 +72,4 @@ datas/*.py
 .vscode/*
 .DS_Store
 *.egg-info/
+backtrader/backtrader.code-workspace
